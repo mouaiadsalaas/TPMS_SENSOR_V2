@@ -1,4 +1,39 @@
-/***** Includes *****/
+/*
+ *TIRE PRESSURE MONITORING SYSTEM
+ *Date   : 24.06.2021
+ *Author : MOUAIAD SALAAS
+ *this project copy right return to INOVAR R&D SOLUTIONS limited company
+ */
+
+
+//NOTES:
+/*(CC1310)
+ *1.OUR USED PINS ARE:
+ *                        IOID_20   :   FXTH Activate PIN ,
+ *
+ *                        IOID_16   :   Our board led,
+ *
+ *                        IOID_28   :   CC1190 PIN to close before sleep,
+ *                        IOID_29   :   CC1190 PIN to close before sleep,
+ *                        IOID_30   :   CC1190 PIN to close before sleep,
+ *
+ *                        IOID_8    :   CC1310 SPI MISO PIN,
+ *                        IOID_9    :   CC1310 SPI MOSI PIN,
+ *                        IOID_10   :   CC1310 SPI CLCK PIN,
+ *                        IOID_11   :   CC1310 SPI CS   PIN,
+ *
+ */
+
+
+/*(FXTH)
+ *1.OUR USED PINS ARE:
+ *                        PTA0   :   FXTH SPI MOSI PIN,
+ *                        PTA1   :   FXTH SPI CLCK PIN,
+ *                        PTA2   :   FXTH SPI MISO PIN,
+ *                        PTB1   :   FXTH SPI CS   PIN,
+ */
+
+/************************************************************ Includes ***********************************************************************/
 /* Standard C Libraries */
 #include <stdlib.h>
 #include <unistd.h>
@@ -32,6 +67,7 @@
 #include "Board.h"
 #include "smartrf_settings/smartrf_settings.h"
 
+/************************************************************ defines & variables ***********************************************************************/
 #define delayMs(a)                Task_sleep(a*1000 / Clock_tickPeriod);
 
 /* Stack size in bytes */
@@ -55,7 +91,7 @@ SPI_Transaction transaction;
 uint8_t Buf[16];
 uint16_t TPMS_ID = 0;
 
-uint16_t TPMS_Pressure = 40;
+uint16_t TPMS_Pressure = 0;
 uint16_t Pressure_OUT = 0;
 
 uint16_t TPMS_Accel_Z = 0;
@@ -98,7 +134,6 @@ bool flag = false;
 #define PACKET_INTERVAL     500000  /* Set packet interval to 500000us or 500ms */
 #endif
 
-/***** Prototypes *****/
 
 /***** Variable declarations *****/
 static RF_Object rfObject;
@@ -133,20 +168,18 @@ PIN_Config pinTable[] =
 };
 
 uint16_t TPMS_Pressure_Wanted = 40;
-bool Send_flag = false;
+bool Send_flag = true;
 
 uint16_t TPMS_Pressure_Maximum_Confirm = 0;
 bool     Tire_Explosion_flag  = false;
-/*******************************************************************1.RfThread task *********************************************************/
+/*******************************************************************Prototypes*********************************************************/
 
-
-
-// Callback function
+/*1.SPI Callback function */
 static void transferCallback(SPI_Handle handle, SPI_Transaction *transaction)
 {
     // Start another transfer
     SPI_transfer(handle, transaction);
-    if(Send_flag == false){
+//    if(Send_flag == false){
 
         TPMS_Temp = Buf[13] - 55;
 
@@ -162,11 +195,11 @@ static void transferCallback(SPI_Handle handle, SPI_Transaction *transaction)
         TPMS_Accel_Z |= Buf[9];
         Accel_Z_OUT = 0.118*TPMS_Accel_Z+(-30-0.118);
 
-    //    TPMS_Pressure = Buf[6];
-    //    TPMS_Pressure <<= 8;
-    //    TPMS_Pressure |= Buf[7];
+        TPMS_Pressure = Buf[6];
+        TPMS_Pressure <<= 8;
+        TPMS_Pressure |= Buf[7];
 
-        TPMS_Pressure  = TPMS_Pressure - 10 ;
+//        TPMS_Pressure  = TPMS_Pressure - 10 ;
 
         Pressure_OUT = 2.750*TPMS_Pressure+(100-2.750);
 
@@ -206,15 +239,16 @@ static void transferCallback(SPI_Handle handle, SPI_Transaction *transaction)
         if(Tire_Explosion_flag){    //if Tire_Explosion_flag has been set so we need to send the data through RF
             Send_flag = true;
             TPMS_Pressure_Wanted= 40;
-            TPMS_Pressure = 40;
+//            TPMS_Pressure = 40;
             TPMS_Pressure_Maximum_Confirm = 0;
             //Set sleep duration to be 20 minute as before
         }
-    }
+//    }
 
 }
 
-/*******************************************************************1.SpiThread task *********************************************************/
+/**************************************************************************************************************************************/
+/*2.spiInit function */
 void spiInit()
 {
     SPI_Params_init(&spiParams);
@@ -242,11 +276,17 @@ void spiInit()
 
     SPI_transfer(slaveSpi, &transaction);
 }
+
+/**************************************************************************************************************************************/
+/*3.clk2Fxn function */
 void clk2Fxn ( UArg arg0 ){
 
     counterGln++;
     counterRf++;
 }
+
+/**************************************************************************************************************************************/
+/*4.MainThread */
 void MainThread(void *arg0)
 {
 
@@ -260,7 +300,7 @@ void MainThread(void *arg0)
         while(1);
     }
 
-    uint32_t    standbyDuration = 10;
+    uint32_t    standbyDuration = 1;
     /* CC1190 PINS*/
     PIN_setOutputValue(ledPinHandle, IOID_28, 0);
     PIN_setOutputValue(ledPinHandle, IOID_29, 0);
@@ -325,11 +365,15 @@ void MainThread(void *arg0)
             /* Create packet with incrementing sequence number and random payload */
             packet[0] = (uint8_t)(seqNumber >> 8);
             packet[1] = (uint8_t)(seqNumber++);
+            packet[2] = (uint8_t)('B');
+            packet[3] = (uint8_t)('a');
+            packet[4] = (uint8_t)('s');
+            packet[5] = (uint8_t)('i');
+            packet[6] = (uint8_t)('n');
+            packet[7] = (uint8_t)('c');
+            packet[8]  = TPMS_Pressure;
             uint8_t i;
-            for (i = 2; i < PAYLOAD_LENGTH; i++)
-            {
-                packet[i] = rand();
-            }
+
 
             /* Send packet */
             RF_EventMask terminationReason = RF_runCmd(rfHandle, (RF_Op*)&RF_cmdPropTx,
@@ -364,7 +408,7 @@ void MainThread(void *arg0)
                     // Packet transmitted successfully
 
                     RF_close(rfHandle);
-                    Send_flag = false;
+                    Send_flag = true;
                     break;
                 case PROP_DONE_STOPPED:
                     // received CMD_STOP while transmitting packet and finished
@@ -411,6 +455,8 @@ void MainThread(void *arg0)
     }
 }
 
+/**************************************************************************************************************************************/
+/*Main*/
 int main(void){
 
     /*A.SYSTEM PREPARING : Start*/
@@ -440,8 +486,5 @@ int main(void){
     Semaphore_construct(&semStruct, 0, &semParams);
 
     BIOS_start();
-
-
-
 
 }
